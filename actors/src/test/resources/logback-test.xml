@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+
+  <appender name="ConsoleAppender" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%date{"yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", UTC} %-80([%t] %c{5}) %-5p %m%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- https://doc.akka.io/docs/akka/2.6.6/typed/testing-async.html#silence-logging-output-from-tests -->
+  <appender name="CapturingAppender" class="akka.actor.testkit.typed.internal.CapturingAppender" />
+  <logger name="akka.actor.testkit.typed.internal.CapturingAppenderDelegate" >
+    <appender-ref ref="ConsoleAppender"/>
+  </logger>
+
+  <root level="DEBUG">
+    <appender-ref ref="CapturingAppender"/>
+  </root>
+</configuration>
