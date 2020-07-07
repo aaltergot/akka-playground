@@ -29,7 +29,8 @@ class ChainTerminalSpec
             val chainTerminal = spawn(ChainTerminal())
             chainTerminal ! Setup(Settings(0), setupReplyProbe.ref)
 
-            setupReplyProbe.receiveMessage()
+            val ss: SetupSuccess = setupReplyProbe.receiveMessage()
+            ss.nodeId should ===(0)
             setupReplyProbe.expectNoMessage()
         }
 
