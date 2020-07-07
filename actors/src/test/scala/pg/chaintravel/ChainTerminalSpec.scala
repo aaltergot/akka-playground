@@ -2,6 +2,7 @@ package pg.chaintravel
 
 import akka.actor.testkit.typed.scaladsl.{LogCapturing, LoggingTestKit, ScalaTestWithActorTestKit}
 import org.scalatest.wordspec.AnyWordSpecLike
+import org.slf4j.event.Level
 
 class ChainTerminalSpec
     extends ScalaTestWithActorTestKit
@@ -42,23 +43,15 @@ class ChainTerminalSpec
             ss.nodeId should ===(id)
             val visitRef = ss.visitRef
 
-            // prints hops count
-            LoggingTestKit.info("10").expect {
-                visitRef ! Visit(10, Seq(HopInfo(1, 1)))
-            }
-
-            // prints hops history
-            LoggingTestKit.info("actor 1, message received 1").expect {
-                visitRef ! Visit(10, Seq(HopInfo(1, 1), HopInfo(2, 2)))
-            }
-            LoggingTestKit.info("actor 2, message received 2").expect {
-                visitRef ! Visit(10, Seq(HopInfo(1, 1), HopInfo(2, 2)))
-            }
-
-            // also prints self HopInfo
-            LoggingTestKit.info(s"actor $id, message received").expect {
-                visitRef ! Visit(10, Seq(HopInfo(1, 1)))
-            }
+            LoggingTestKit.empty
+              .withMessageContains("10")
+              .withMessageContains("actor 1, message received 1")
+              .withMessageContains("actor 2, message received 2")
+              .withMessageContains(s"actor $id, message received")
+              .withLogLevel(Level.INFO)
+              .expect {
+                  visitRef ! Visit(10, Seq(HopInfo(1, 1)))
+              }
 
             setupReplyProbe.expectNoMessage()
         }

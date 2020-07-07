@@ -1,6 +1,7 @@
 package pg.chaintravel
 
 import akka.actor.testkit.typed.scaladsl.{LogCapturing, ScalaTestWithActorTestKit}
+import akka.actor.typed.ActorRef
 import org.scalatest.wordspec.AnyWordSpecLike
 
 class ChainNodeSpec
@@ -15,7 +16,7 @@ class ChainNodeSpec
     "ignore WrappedVisit while uninitialized" in {
       val probe = createUnhandledMessageProbe()
 
-      val chainNode = spawn(ChainNode())
+      val chainNode: ActorRef[ChainNode.Command] = spawn(ChainNode())
       chainNode ! WrappedVisit(Visit(0, Seq.empty))
 
       probe.receiveMessage()
@@ -29,7 +30,8 @@ class ChainNodeSpec
       val chainNode = spawn(ChainNode())
       chainNode ! Setup(Settings(0, stub.ref), setupReplyProbe.ref)
 
-      setupReplyProbe.receiveMessage()
+      val ss: SetupSuccess = setupReplyProbe.receiveMessage()
+      ss.nodeId should ===(0)
       setupReplyProbe.expectNoMessage()
       stub.expectNoMessage()
     }
@@ -42,7 +44,7 @@ class ChainNodeSpec
       val id = 5
       chainNode ! Setup(Settings(id, visitProbe.ref), setupReplyProbe.ref)
 
-      val ss = setupReplyProbe.receiveMessage()
+      val ss: SetupSuccess = setupReplyProbe.receiveMessage()
       ss.nodeId should ===(id)
       ss.visitRef ! Visit(0, Seq.empty)
 
