@@ -1,43 +1,40 @@
 package pg.circle
 
-import akka.actor.typed.scaladsl.{Behaviors, TimerScheduler}
+import akka.actor.typed.scaladsl.{ActorContext, Behaviors, TimerScheduler}
 import akka.actor.typed.{ActorRef, Behavior}
-
-import scala.concurrent.duration._
-import scala.util.Random
+import pg.setup.{Setup, SetupBehavior}
 
 /** Represents interim node in double-linked chain */
 object CircleNode {
 
   sealed trait Command
+  case class SendMessage(from: ActorRef[Command], message: String) extends Command
+  private case class Propagate(message: String) extends Command
 
-  case class Setup(
+  case class SetupProps(
     nodeId: Int,
-    randomSeed: Long,
+    cooldownRandomSeed: Long,
+    cooldownMaxMillis: Long,
     left: ActorRef[Command],
     right: ActorRef[Command]
-  ) extends Command
-
-  case class Hello(sender: ActorRef[Command], msg: String) extends Command
-
-  case class Propagate(msg: String) extends Command
-
-  case class Data(
-    nodeId: Int,
-    random: Random,
-    timer: TimerScheduler[Command],
-    availablePeers: Set[ActorRef[Command]]
   )
 
-  /** Initial state: awaiting Setup */
-  def apply(): Behavior[Command] = Behaviors.withTimers { timer =>
-    Behaviors.receiveMessagePartial[Command] {
+  case class SetupSuccessProps(nodeId: Int)
 
-      // Setup handler
-      case Setup(nodeId, randomSeed, left, right) =>
-        active(Data(nodeId, new Random(randomSeed), timer, Set(left, right)))
-    }
-  }
+  type SetupFailureProps = Nothing
+
+  type SetupCircleNode = Setup[Command, SetupProps, SetupSuccessProps, SetupFailureProps]
+
+  /** Initial state: awaiting Setup */
+  def apply(): Behavior[SetupCircleNode] =
+    Behaviors.setup(ctx => SetupBehavior.decorate(setup(ctx)))
+
+  case class Props(
+    nodeId: Int,
+    cooldown: Cooldown,
+    timers: TimerScheduler[Command],
+    availablePeers: Set[ActorRef[Command]]
+  )
 
   /**
    * Active state:
@@ -46,23 +43,43 @@ object CircleNode {
    * - Propagate Hello to available peer
    * Peer becomes unavailable if it sends Hello to current.
    */
-  def active(data: Data): Behavior[Command] = Behaviors.receivePartial[Command] {
+  private def active(data: Props): Behavior[Command] = Behaviors.receivePartial[Command] {
 
-    case (_, Hello(sender, msg)) =>
-      val backoff = (data.random.nextInt(100) + 1).millis
-      data.timer.startSingleTimer(Propagate(msg), backoff)
-      active(data.copy(availablePeers = data.availablePeers.filter(_ != sender)))
+    case (_, SendMessage(from, message)) =>
+      data.timers.startSingleTimer(Propagate(message), data.cooldown.next())
+      active(data.copy(availablePeers = data.availablePeers.filter(_ != from)))
 
     case (ctx, Propagate(msg)) =>
       if (data.availablePeers.isEmpty) {
         ctx.log.info("{}", data.nodeId)
-        data.timer.cancelAll()
+        data.timers.cancelAll()
         Behaviors.stopped
       } else {
         for (peer <- data.availablePeers) {
-          peer ! Hello(ctx.self, msg)
+          peer ! SendMessage(ctx.self, msg)
         }
         Behaviors.same
       }
+  }
+
+  private def setup
+    (ctx: ActorContext[SetupCircleNode])
+      (props: SetupProps)
+  : Either[SetupFailureProps, (ActorRef[Command], SetupSuccessProps)] = {
+
+    def runActive(): Behavior[Command] = Behaviors.withTimers[Command] { timers =>
+      val p = Props(
+        nodeId = props.nodeId,
+        cooldown = Cooldown(props.cooldownMaxMillis, props.cooldownRandomSeed),
+        timers = timers,
+        availablePeers = Set(props.left, props.right)
+      )
+      active(p)
+    }
+
+    val initializedRef: ActorRef[Command] =
+      ctx.spawn(runActive(), s"circle-node-${props.nodeId}")
+
+    Right((initializedRef, SetupSuccessProps(props.nodeId)))
   }
 }
