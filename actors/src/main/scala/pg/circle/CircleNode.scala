@@ -8,15 +8,14 @@ import pg.setup.{Setup, SetupBehavior}
 object CircleNode {
 
   sealed trait Command
+  case class SetPeers(left: ActorRef[Command], right: ActorRef[Command]) extends Command
   case class SendMessage(from: ActorRef[Command], message: String) extends Command
-  private case class Propagate(message: String) extends Command
+  private case class Propagate(sendMessage: SendMessage) extends Command
 
   case class SetupProps(
     nodeId: Int,
     cooldownRandomSeed: Long,
-    cooldownMaxMillis: Long,
-    left: ActorRef[Command],
-    right: ActorRef[Command]
+    cooldownMaxMillis: Long
   )
 
   case class SetupSuccessProps(nodeId: Int)
@@ -33,20 +32,25 @@ object CircleNode {
     nodeId: Int,
     cooldown: Cooldown,
     timers: TimerScheduler[Command],
-    availablePeers: Set[ActorRef[Command]]
+    availablePeers: Seq[ActorRef[Command]]
   )
 
   /**
    * Active state:
    * - Receive Hello
-   * - Wait from 1 to 100 millis
+   * - Wait from 1 to cooldownMaxMillis millis
    * - Propagate Hello to available peer
    * Peer becomes unavailable if it sends Hello to current.
    */
   private def active(data: Props): Behavior[Command] = Behaviors.receivePartial[Command] {
 
-    case (_, SendMessage(from, message)) =>
-      data.timers.startSingleTimer(Propagate(message), data.cooldown.next())
+    case (_, SetPeers(left, right)) =>
+      data.timers.cancelAll()
+      active(data.copy(availablePeers = Seq(left, right)))
+
+    case (_, msg @ SendMessage(from, _)) =>
+      val cd = data.cooldown.next()
+      data.timers.startSingleTimer(Propagate(msg), cd)
       active(data.copy(availablePeers = data.availablePeers.filter(_ != from)))
 
     case (ctx, Propagate(msg)) =>
@@ -56,12 +60,13 @@ object CircleNode {
         Behaviors.stopped
       } else {
         for (peer <- data.availablePeers) {
-          peer ! SendMessage(ctx.self, msg)
+          peer ! msg.copy(from = ctx.self)
         }
         Behaviors.same
       }
   }
 
+  /** Setup routine. See [[SetupBehavior]]. */
   private def setup
     (ctx: ActorContext[SetupCircleNode])
       (props: SetupProps)
@@ -72,7 +77,7 @@ object CircleNode {
         nodeId = props.nodeId,
         cooldown = Cooldown(props.cooldownMaxMillis, props.cooldownRandomSeed),
         timers = timers,
-        availablePeers = Set(props.left, props.right)
+        availablePeers = Seq.empty
       )
       active(p)
     }
