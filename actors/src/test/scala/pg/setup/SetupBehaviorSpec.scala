@@ -1,6 +1,8 @@
 package pg.setup
 
 import akka.actor.testkit.typed.scaladsl.{LogCapturing, ScalaTestWithActorTestKit}
+import akka.actor.typed.ActorRef
+import akka.actor.typed.scaladsl.Behaviors
 import org.scalatest.wordspec.AnyWordSpecLike
 
 class SetupBehaviorSpec
@@ -9,43 +11,34 @@ class SetupBehaviorSpec
   with LogCapturing {
 
   "SetupBehaviour actor" must {
-    "asdf" in {
-      val test = new TestBehavior()
-      val testSetup = spawn(test)
+    "setup once" in {
+      import SetupTestBehavior._
 
-      val nodeId = 1
+      val setupReplyProbe = createTestProbe[
+        Either[SetupFailureProps, (ActorRef[InitializingCommand], SetupSuccessProps)]
+      ]()
 
-      val setupMessage = Setup[Command, SetupProps, SetupSuccessProps, SetupFailureProps](
-        props = SetupProps(
-          nodeId,
-          cooldownRandomSeed = 1L,
-          cooldownMaxMillis = 1L,
-          left = leftProbe.ref,
-          right = rightProbe.ref,
-        ),
-        replyTo = setupReplyProbe.ref
-      )
+      val initializedProbe = createTestProbe[InitializingCommand]()
 
-      node ! setupMessage
+      val setupSuccessResult = Right((initializedProbe.ref, new SetupSuccessProps()))
+      val setupSuccessBehavior = Behaviors.setup[
+        Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps]
+      ] { ctx => new SetupTestBehavior(ctx, setupSuccessResult) }
 
-      testSetup ! Setup()
+      val testSetup = spawn(setupSuccessBehavior)
+
+      val setupMessage =
+        Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps](
+          props = new SetupProps,
+          replyTo = setupReplyProbe.ref
+        )
+
+      testSetup ! setupMessage
+      setupReplyProbe.receiveMessage() should ===(setupSuccessResult)
+
+      testSetup ! setupMessage
+      setupReplyProbe.expectNoMessage()
     }
   }
 }
 
-
-object InitializingCommand
-object SetupProps
-object SetupSuccessProps
-object SetupFailureProps
-
-class TestBehavior
-  extends SetupBehavior[
-    InitializingCommand,
-    SetupProps,
-    SetupSuccessProps,
-    SetupFailureProps
-  ] {
-
-
-}

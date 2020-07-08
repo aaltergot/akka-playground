@@ -9,9 +9,16 @@ case class Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailur
   replyTo: ActorRef[Either[SetupFailureProps, (ActorRef[InitializingCommand], SetupSuccessProps)]]
 )
 
-abstract class SetupBehavior[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps](
-  context: ActorContext[Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps]]
-) extends AbstractBehavior[Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps]](context) {
+abstract class SetupBehavior[
+  InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps
+](
+  context: ActorContext[
+    Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps]
+  ]
+)
+    extends AbstractBehavior[
+      Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps]
+    ](context) {
 
   override def onMessage(
     msg: Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps]
@@ -20,13 +27,15 @@ abstract class SetupBehavior[InitializingCommand, SetupProps, SetupSuccessProps,
     Behaviors.empty
   }
 
-  protected def setup(props: SetupProps): Either[SetupFailureProps, (ActorRef[InitializingCommand], SetupSuccessProps)]
+  protected def setup(props: SetupProps):
+    Either[SetupFailureProps, (ActorRef[InitializingCommand], SetupSuccessProps)]
 }
 
 object SetupBehavior {
 
   def decorate[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps](
-    setupF: SetupProps => Either[SetupFailureProps, (ActorRef[InitializingCommand], SetupSuccessProps)]
+    setupF: SetupProps =>
+      Either[SetupFailureProps, (ActorRef[InitializingCommand], SetupSuccessProps)]
   ): Behavior[Setup[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps]] =
     Behaviors.setup(context =>
       new SetupBehavior[InitializingCommand, SetupProps, SetupSuccessProps, SetupFailureProps](
@@ -39,5 +48,6 @@ object SetupBehavior {
           SetupFailureProps,
           (ActorRef[InitializingCommand], SetupSuccessProps)
         ] = setupF(props)
-      })
+      }
+    )
 }
